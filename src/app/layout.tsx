@@ -14,7 +14,7 @@ export const metadata: Metadata = {
 		default: "The Hamid-ul-Islam's Blog",
 	},
 	icons: {
-		icon: '/hamidulislam.png',
+		icon: '/favicon.png',
 	},
 }
 
