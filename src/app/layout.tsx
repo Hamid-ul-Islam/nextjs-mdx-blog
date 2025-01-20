@@ -16,6 +16,9 @@ export const metadata: Metadata = {
 	icons: {
 		icon: '/favicon.png',
 	},
+	verification: {
+		google: '2GPkgD0Z-LkM-aOI8Fxg_Tv_iuxIjXAsYafu2Qj464E',
+	},
 }
 
 const fontCode = localFont({
