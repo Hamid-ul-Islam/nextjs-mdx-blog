@@ -2,7 +2,7 @@ import authorAvatar from '../../public/images/author/hamidulislam.png'
 export const siteConfig = {
 	name: 'Hamid.ul Islam',
 	description:
-		"Join 56.9k people who have read Kent's 102 articles on JavaScript, TypeScript, React, Testing, Career, and more. Learn how to become a better developer.",
+		'Hamidul Islam is a Full Stack JavaScript Developer passionate about creating efficient and scalable web applications.',
 	author: 'Hamidul Islam',
 	authorImage: authorAvatar,
 	social: {
