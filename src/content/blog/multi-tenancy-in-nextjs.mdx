@@ -1,0 +1,137 @@
+---
+title: 'How I Build a Multi-Tenant School Management System with Next.js'
+description:
+  'A comprehensive guide to developing a scalable, multi-tenant school
+  management system using Next.js, focusing on architecture, authentication, and
+  data isolation.'
+date: '2025-01-23'
+author: 'Hamidul Islam'
+---
+
+## Introduction
+
+Multi-tenant systems are crucial for modern SaaS applications, especially in
+education technology. In this post, I'll walk you through my journey of building
+a robust school management system using Next.js, highlighting the key
+architectural decisions and technical challenges.
+
+## Understanding Multi-Tenancy
+
+Multi-tenancy means multiple organizations (schools, in our case) can use the
+same application while keeping their data completely isolated. This approach
+offers:
+
+- Cost-effective infrastructure
+- Simplified maintenance
+- Scalable architecture
+
+## Technology Stack
+
+My chosen stack for this project included:
+
+- Next.js 14 (App Router)
+- Prisma ORM
+- PostgreSQL
+- Supabase for Authentication
+- Shadcn UI for components
+- Vercel for deployment
+
+## Database Design: The Isolation Strategy
+
+The core of multi-tenancy lies in data isolation. I implemented a tenant-aware
+database schema:
+
+```sql
+CREATE TABLE organizations (
+  id UUID PRIMARY KEY,
+  name TEXT NOT NULL,
+  slug TEXT UNIQUE NOT NULL
+);
+
+CREATE TABLE users (
+  id UUID PRIMARY KEY,
+  organization_id UUID REFERENCES organizations(id),
+  email TEXT NOT NULL,
+  role TEXT NOT NULL
+);
+
+CREATE TABLE students (
+  id UUID PRIMARY KEY,
+  organization_id UUID REFERENCES organizations(id),
+  name TEXT NOT NULL,
+  grade TEXT
+);
+```
+
+By adding `organization_id` to each table, we ensure data remains strictly
+separated.
+
+## Authentication and Authorization
+
+Supabase provided a powerful authentication mechanism. Each login associates a
+user with their specific organization, implementing row-level security:
+
+```typescript
+// Middleware for tenant-specific access
+export function withTenantAccess(handler) {
+	return async (req, res) => {
+		const session = await getServerSession()
+		const organizationSlug = req.query.orgSlug
+
+		if (!session || session.user.organizationSlug !== organizationSlug) {
+			return res.status(403).json({ error: 'Unauthorized' })
+		}
+
+		return handler(req, res)
+	}
+}
+```
+
+## Dynamic Routing with Tenant Context
+
+Next.js App Router enabled seamless tenant-specific routing:
+
+```typescript
+// app/[orgSlug]/dashboard/page.tsx
+export default function DashboardPage({ params }) {
+	const { orgSlug } = params
+	// Fetch org-specific data
+}
+```
+
+## Performance Considerations
+
+To maintain performance, I implemented:
+
+- Efficient database indexing
+- Cached queries using Redis
+- Selective data loading
+- Optimized server-side rendering
+
+## Deployment and Scaling
+
+Vercel's platform made deployment straightforward, with built-in:
+
+- Automatic scaling
+- Global CDN
+- Easy environment management
+
+## Challenges and Lessons Learned
+
+1. Implementing row-level security was complex
+2. Careful query design prevents potential data leaks
+3. Comprehensive testing is crucial for multi-tenant systems
+
+## Conclusion
+
+Building a multi-tenant school management system requires careful architectural
+planning. Next.js provides powerful tools to create scalable, secure, and
+performant applications.
+
+## Next Steps
+
+- Implement more granular role-based access control
+- Add comprehensive audit logging
+- Develop advanced reporting features
+
+Happy coding! 🚀
