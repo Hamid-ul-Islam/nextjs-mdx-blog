@@ -19,7 +19,7 @@ export default function AboutPage() {
 			<hr className="my-8" />
 
 			<div className="flex flex-col items-center space-y-6 lg:flex-row  lg:space-x-6 lg:space-y-0">
-				<div className="mx-auto mt-8 w-[400px]">
+				<div className="mx-auto mt-8 lg:mt-0 lg:w-[400px] w-full">
 					<div className="relative flex flex-col items-center gap-2 rounded-md bg-secondary px-4 py-6">
 						<Image
 							src={siteConfig.authorImage}
