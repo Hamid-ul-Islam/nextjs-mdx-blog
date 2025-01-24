@@ -1,0 +1,486 @@
+---
+title: 'Algorithm Techniques: A Comprehensive Guide'
+description:
+  'Explore essential algorithm techniques with practical implementations, coding
+  templates, and strategic problem-solving approaches.'
+date: '2025-24-01'
+author: 'Hamidul Islam'
+---
+
+## 1. Sliding Window Technique
+
+### When to Use?
+
+- Optimizing subarray or substring problems
+- Finding continuous sequences
+- Solving problems with linear time complexity
+
+### Techniques
+
+- Fixed Sliding Window
+- Dynamic Sliding Window
+
+```python
+def fixed_sliding_window(arr, k):
+    window_sum = sum(arr[:k])
+    max_sum = window_sum
+
+    for i in range(k, len(arr)):
+        window_sum = window_sum - arr[i-k] + arr[i]
+        max_sum = max(max_sum, window_sum)
+
+    return max_sum
+
+def dynamic_sliding_window(arr, target):
+    left = total = 0
+    min_length = float('inf')
+
+    for right in range(len(arr)):
+        total += arr[right]
+
+        while total >= target:
+            min_length = min(min_length, right - left + 1)
+            total -= arr[left]
+            left += 1
+
+    return min_length if min_length != float('inf') else 0
+```
+
+### LeetCode Problems
+
+- Maximum Subarray Sum
+- Longest Substring Without Repeating Characters
+- Minimum Window Substring
+
+## 2. Two Pointers Technique
+
+### When to Use?
+
+- Searching pairs in sorted arrays
+- Reversing arrays/linked lists
+- Detecting cycles
+- Comparing sequences efficiently
+
+### Implementation
+
+```python
+def pair_with_target_sum(arr, target):
+    left, right = 0, len(arr) - 1
+
+    while left < right:
+        current_sum = arr[left] + arr[right]
+
+        if current_sum == target:
+            return [left, right]
+
+        if current_sum < target:
+            left += 1
+        else:
+            right -= 1
+
+    return []
+```
+
+### LeetCode Problems
+
+- Two Sum II
+- Container With Most Water
+- 3Sum
+
+## 3. Fast and Slow Pointers
+
+### When to Use?
+
+- Detecting cycles in linked lists
+- Finding midpoint of structures
+- Identifying repeated elements
+
+### Implementation
+
+```python
+def has_cycle(head):
+    slow = fast = head
+
+    while fast and fast.next:
+        slow = slow.next
+        fast = fast.next.next
+
+        if slow == fast:
+            return True
+
+    return False
+
+def find_cycle_start(head):
+    slow = fast = head
+
+    while fast and fast.next:
+        slow = slow.next
+        fast = fast.next.next
+
+        if slow == fast:
+            slow = head
+            while slow != fast:
+                slow = slow.next
+                fast = fast.next
+
+            return slow
+
+    return None
+```
+
+### LeetCode Problems
+
+- Linked List Cycle
+- Middle of the Linked List
+- Palindrome Linked List
+
+## 4. In-Place Linked List Reversal
+
+### When to Use?
+
+- Reversing linked list order
+- Memory-efficient list transformations
+
+### Implementation
+
+```python
+def reverse_linked_list(head):
+    prev = None
+    current = head
+
+    while current:
+        next_node = current.next
+        current.next = prev
+        prev = current
+        current = next_node
+
+    return prev
+```
+
+### LeetCode Problems
+
+- Reverse Linked List
+- Reverse Linked List II
+- Rotate List
+
+## 5. Binary Search
+
+### When to Use?
+
+- Searching sorted arrays
+- Finding insertion points
+- Handling ordered collections
+
+### Implementation
+
+```python
+def binary_search(arr, target):
+    left, right = 0, len(arr) - 1
+
+    while left <= right:
+        mid = (left + right) // 2
+
+        if arr[mid] == target:
+            return mid
+        elif arr[mid] < target:
+            left = mid + 1
+        else:
+            right = mid - 1
+
+    return -1
+```
+
+### LeetCode Problems
+
+- Binary Search
+- Search in Rotated Sorted Array
+- First Bad Version
+
+## 6. Top K Elements
+
+### When to Use?
+
+- Finding largest/smallest k elements
+- Priority queue problems
+- Heap-based solutions
+
+### Implementation
+
+```python
+import heapq
+
+def top_k_frequent(nums, k):
+    frequency = {}
+    for num in nums:
+        frequency[num] = frequency.get(num, 0) + 1
+
+    return heapq.nlargest(k, frequency.keys(), key=frequency.get)
+```
+
+### LeetCode Problems
+
+- Top K Frequent Elements
+- K Closest Points to Origin
+- Kth Largest Element
+
+## 7. Binary Tree Traversal
+
+### Techniques
+
+- Depth-First Search (DFS)
+- Breadth-First Search (BFS)
+
+### Implementation
+
+```python
+def inorder_traversal(root):
+    result = []
+
+    def traverse(node):
+        if not node:
+            return
+
+        traverse(node.left)
+        result.append(node.val)
+        traverse(node.right)
+
+    traverse(root)
+    return result
+```
+
+### LeetCode Problems
+
+- Binary Tree Inorder Traversal
+- Maximum Depth of Binary Tree
+- Symmetric Tree
+
+## 8. Graph and Matrices
+
+### Techniques
+
+- DFS/BFS Traversal
+- Path Finding
+- Connected Components
+
+### Implementation
+
+```python
+def num_islands(grid):
+    if not grid:
+        return 0
+
+    rows, cols = len(grid), len(grid[0])
+    islands = 0
+
+    def dfs(r, c):
+        if r < 0 or r >= rows or c < 0 or c >= cols or grid[r][c] != '1':
+            return
+
+        grid[r][c] = '0'
+        dfs(r+1, c)
+        dfs(r-1, c)
+        dfs(r, c+1)
+        dfs(r, c-1)
+
+    for r in range(rows):
+        for c in range(cols):
+            if grid[r][c] == '1':
+                dfs(r, c)
+                islands += 1
+
+    return islands
+```
+
+### LeetCode Problems
+
+- Number of Islands
+- Max Area of Island
+- Flood Fill
+
+## 9. Backtracking
+
+### When to Use?
+
+- Generating combinations
+- Solving constraint satisfaction problems
+- Exploring all possible solutions
+
+### Implementation
+
+```python
+def generate_parentheses(n):
+    result = []
+
+    def backtrack(open_count, close_count, current):
+        if len(current) == 2 * n:
+            result.append(current)
+            return
+
+        if open_count < n:
+            backtrack(open_count + 1, close_count, current + "(")
+
+        if close_count < open_count:
+            backtrack(open_count, close_count + 1, current + ")")
+
+    backtrack(0, 0, "")
+    return result
+```
+
+### LeetCode Problems
+
+- Generate Parentheses
+- Combination Sum
+- Subsets
+
+## 10. Dynamic Programming
+
+### Techniques
+
+- Memoization
+- Tabulation
+- State Reduction
+
+### Implementation
+
+```python
+def fibonacci(n):
+    if n <= 1:
+        return n
+
+    dp = [0] * (n + 1)
+    dp[1] = 1
+
+    for i in range(2, n + 1):
+        dp[i] = dp[i-1] + dp[i-2]
+
+    return dp[n]
+```
+
+### LeetCode Problems
+
+- Fibonacci Number
+- Climbing Stairs
+- Maximum Subarray
+
+## 11. Bit Manipulation
+
+### Techniques
+
+- Bitwise operations
+- XOR properties
+- Bit counting
+
+### Implementation
+
+```python
+def single_number(nums):
+    result = 0
+    for num in nums:
+        result ^= num
+    return result
+```
+
+### LeetCode Problems
+
+- Single Number
+- Number of 1 Bits
+- Reverse Bits
+
+## 12. Overlapping Intervals
+
+### Techniques
+
+- Sorting intervals
+- Merge intervals
+- Finding conflicts
+
+### Implementation
+
+```python
+def merge_intervals(intervals):
+    intervals.sort(key=lambda x: x[0])
+    merged = []
+
+    for interval in intervals:
+        if not merged or interval[0] > merged[-1][1]:
+            merged.append(interval)
+        else:
+            merged[-1][1] = max(merged[-1][1], interval[1])
+
+    return merged
+```
+
+### LeetCode Problems
+
+- Merge Intervals
+- Insert Interval
+- Meeting Rooms
+
+## 13. Monotonic Stack
+
+### Techniques
+
+- Next Greater/Smaller Element
+- Maintaining increasing/decreasing stacks
+
+### Implementation
+
+```python
+def next_greater_elements(nums):
+    n = len(nums)
+    result = [-1] * n
+    stack = []
+
+    for i in range(2 * n):
+        while stack and nums[stack[-1]] < nums[i % n]:
+            result[stack.pop()] = nums[i % n]
+
+        if i < n:
+            stack.append(i)
+
+    return result
+```
+
+### LeetCode Problems
+
+- Next Greater Element I
+- Daily Temperatures
+- Remove K Digits
+
+## 14. Prefix Sum
+
+### Techniques
+
+- Range sum queries
+- Cumulative calculations
+- Quick interval computations
+
+### Implementation
+
+```python
+def subarray_sum(nums, k):
+    count = 0
+    prefix_sum = 0
+    sum_counts = {0: 1}
+
+    for num in nums:
+        prefix_sum += num
+
+        if prefix_sum - k in sum_counts:
+            count += sum_counts[prefix_sum - k]
+
+        sum_counts[prefix_sum] = sum_counts.get(prefix_sum, 0) + 1
+
+    return count
+```
+
+### LeetCode Problems
+
+- Subarray Sum Equals K
+- Range Sum Query
+- Product of Array Except Self
+
+## Conclusion
+
+Master these algorithm techniques to solve complex computational problems
+efficiently and elegantly.
