@@ -78,4 +78,4 @@ To get a copy of MDX Blog Template up and running on your local machine, follow 
 
   To add new blog content, go to `content` folder and you can add new markdown component in `.mdx` file
 
-  `Important`: Make sure to name the component with dash(`-`) and without space. Example: `my-example-blog.mdx`
+  `Important`: Make sure to name the component with dash(`-`) and without space.
