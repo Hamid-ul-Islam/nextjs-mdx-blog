@@ -1,8 +1,6 @@
 # MDX Static Blog Template
 
-MDX Blog Template is a simple implementation of a markdown static blog. Built with Next.js 14 and velite js.
-
-<img src="screenshot/mdx-blog-template.jpg" alt="Dashboard" width="100%">
+Built with Next.js 14 and velite js.
 
 ## Table of Contents
 
@@ -39,7 +37,7 @@ To get a copy of MDX Blog Template up and running on your local machine, follow 
 1. **Clone the repository**:
 
    ```bash
-   git clone https://github.com/devbertskie/next-mdx-blog.git
+   git clone https://github.com/Hamid-ul-Islam/next-mdx-blog.git
    ```
 
    After successful cloned. Head over to the project directory
