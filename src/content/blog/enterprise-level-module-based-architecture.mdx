@@ -1,0 +1,670 @@
+---
+title: 'Enterprise-Grade Module-Based Architecture for Next.js Applications'
+description: 'A scalable approach to structuring large-scale Next.js applications'
+date: '2025-03-04'
+author: 'Hamidul Islam'
+---
+
+# Enterprise-Grade Module-Based Architecture for Next.js Applications
+
+In today's complex web development landscape, maintaining clean, scalable codebases becomes increasingly challenging as applications grow. After studying how industry leaders structure their Next.js applications, I've implemented a module-based architecture that has revolutionized our development workflow and codebase management.
+
+This approach combines domain-driven design principles with Next.js conventions to create a maintainable, scalable system that works for teams of any size.
+
+## The Challenge with Traditional Next.js Structures
+
+Standard Next.js projects typically organize code by technical function:
+
+```
+src/
+  ├── components/
+  ├── hooks/
+  ├── utils/
+  ├── styles/
+  └── app/
+```
+
+While this structure works initially, it quickly leads to:
+
+- **Team conflicts**: Developers simultaneously editing the same directories
+- **Reduced code reusability**: Unclear boundaries between features
+- **Feature fragmentation**: Logic for a single feature spread across multiple directories
+- **Difficult onboarding**: New team members struggle to understand feature relationships
+
+## The Module-Based Architecture Solution
+
+The module-based architecture reorganizes code around business domains rather than technical functions, creating clear boundaries between features. Here's the complete folder structure:
+
+```
+src/
+  ├── app/                      # Next.js App Router pages
+  │   ├── layout.tsx            # Root layout
+  │   ├── page.tsx              # Home page
+  │   ├── courses/              # Course-related pages
+  │   │   ├── page.tsx          # Courses listing page
+  │   │   └── [id]/             # Course detail pages
+  │   │       └── page.tsx
+  │   ├── quiz/                 # Quiz-related pages
+  │   │   └── [id]/
+  │   │       └── page.tsx
+  │   └── shop/                 # E-commerce pages
+  │       ├── page.tsx          # Products listing
+  │       ├── cart/             # Shopping cart
+  │       │   └── page.tsx
+  │       └── checkout/         # Checkout flow
+  │           └── page.tsx
+  │
+  ├── core/                     # Core application infrastructure
+  │   ├── components/           # Shared UI components
+  │   │   ├── layout/           # Layout components
+  │   │   │   ├── header.tsx
+  │   │   │   ├── footer.tsx
+  │   │   │   └── sidebar.tsx
+  │   │   └── ui/               # UI components
+  │   │       ├── button.tsx
+  │   │       ├── card.tsx
+  │   │       └── input.tsx
+  │   ├── hooks/                # Global hooks
+  │   │   ├── use-media-query.ts
+  │   │   └── use-local-storage.ts
+  │   ├── lib/                  # External service clients
+  │   │   ├── db.ts             # Database client
+  │   │   └── api.ts            # API client
+  │   └── utils/                # Utility functions
+  │       ├── classnames.ts
+  │       └── date-formatter.ts
+  │
+  └── modules/                  # Feature modules
+      ├── auth/                 # Authentication module
+      │   ├── components/       # Auth-specific components
+      │   │   ├── login-form.tsx
+      │   │   ├── signup-form.tsx
+      │   │   └── index.ts
+      │   ├── actions/          # Auth server actions
+      │   │   ├── login.ts
+      │   │   ├── signup.ts
+      │   │   └── index.ts
+      │   ├── hooks/            # Auth-specific hooks
+      │   │   ├── use-auth.ts
+      │   │   └── index.ts
+      │   ├── utils/            # Auth utilities
+      │   │   └── token.ts
+      │   ├── types.ts          # Auth type definitions
+      │   └── index.ts          # Public API
+      │
+      ├── courses/              # Course management module
+      │   ├── components/       # Course-specific components
+      │   │   ├── course-card.tsx
+      │   │   ├── course-list.tsx
+      │   │   └── index.ts
+      │   ├── actions/          # Course server actions
+      │   │   ├── create-course.ts
+      │   │   └── index.ts
+      │   ├── hooks/            # Course-specific hooks
+      │   │   ├── use-courses.ts
+      │   │   └── index.ts
+      │   ├── utils/            # Course utilities
+      │   │   └── format-duration.ts
+      │   ├── types.ts          # Course type definitions
+      │   └── index.ts          # Public API
+      │
+      ├── quiz/                 # Quiz functionality module
+      │   ├── components/
+      │   ├── actions/
+      │   ├── hooks/
+      │   ├── utils/
+      │   ├── types.ts
+      │   └── index.ts
+      │
+      └── shop/                 # E-commerce module
+          ├── components/
+          ├── actions/
+          ├── hooks/
+          ├── utils/
+          ├── types.ts
+          └── index.ts
+```
+
+This structure provides clear separation of concerns while maintaining Next.js conventions.
+
+## Anatomy of a Module
+
+Each module is a self-contained unit that encapsulates everything related to a specific feature:
+
+```
+modules/courses/
+  ├── components/           # UI components for this feature
+  │   ├── course-card.tsx
+  │   ├── course-list.tsx
+  │   └── index.ts          # Barrel export file
+  ├── actions/              # Server actions
+  │   ├── create-course.ts
+  │   ├── update-course.ts
+  │   └── index.ts
+  ├── hooks/                # Feature-specific React hooks
+  │   ├── use-courses.ts
+  │   └── index.ts
+  ├── utils/                # Feature-specific utilities
+  │   ├── format-duration.ts
+  │   └── index.ts
+  ├── types.ts              # TypeScript definitions
+  └── index.ts              # Public API
+```
+
+## Leveraging Server Actions for Clean API Design
+
+One of the most powerful aspects of this architecture is the use of Next.js server actions instead of traditional API routes. Server actions are co-located with their related modules, maintaining our domain-driven structure:
+
+```typescript
+// modules/courses/actions/create-course.ts
+'use server'
+
+import { z } from 'zod';
+import { prisma } from '@/core/lib/db';
+
+const CourseSchema = z.object({
+  title: z.string().min(3).max(100),
+  description: z.string().min(10),
+  duration: z.number().positive(),
+  level: z.enum(['beginner', 'intermediate', 'advanced'])
+});
+
+export async function createCourse(formData: FormData) {
+  const data = Object.fromEntries(formData);
+  
+  try {
+    const validated = CourseSchema.parse({
+      ...data,
+      duration: Number(data.duration)
+    });
+    
+    const course = await prisma.course.create({
+      data: validated
+    });
+    
+    return { success: true, course };
+  } catch (error) {
+    return { success: false, error };
+  }
+}
+```
+
+These server actions can be imported directly into components within the same module:
+
+```tsx
+// modules/courses/components/course-form.tsx
+'use client'
+
+import { useFormState } from 'react-dom';
+import { Button } from '@/core/components/ui/button';
+import { createCourse } from '../actions';
+
+export function CourseForm() {
+  const [state, formAction] = useFormState(createCourse, { success: false });
+  
+  return (
+    <form action={formAction}>
+      <div className="space-y-4">
+        <div>
+          <label htmlFor="title">Course Title</label>
+          <input id="title" name="title" required />
+        </div>
+        
+        <div>
+          <label htmlFor="description">Description</label>
+          <textarea id="description" name="description" required />
+        </div>
+        
+        <div>
+          <label htmlFor="duration">Duration (hours)</label>
+          <input id="duration" name="duration" type="number" min="1" required />
+        </div>
+        
+        <div>
+          <label htmlFor="level">Level</label>
+          <select id="level" name="level" required>
+            <option value="beginner">Beginner</option>
+            <option value="intermediate">Intermediate</option>
+            <option value="advanced">Advanced</option>
+          </select>
+        </div>
+        
+        <Button type="submit">Create Course</Button>
+        
+        {state.success === false && state.error && (
+          <p className="text-red-500">Error: {state.error.message}</p>
+        )}
+      </div>
+    </form>
+  );
+}
+```
+
+## Detailed Directory Structure Guide
+
+Let's explore what belongs in each directory of our architecture:
+
+### `/src/core`
+
+The core directory contains application-wide infrastructure and utilities:
+
+```typescript
+// core/lib/db.ts
+import { PrismaClient } from '@prisma/client'
+
+export const prisma = new PrismaClient()
+
+// Singleton pattern to prevent multiple instances during hot reloading
+if (process.env.NODE_ENV === 'development') {
+  // @ts-ignore
+  global.prisma = global.prisma || prisma
+}
+
+export default process.env.NODE_ENV === 'development' 
+  // @ts-ignore
+  ? global.prisma 
+  : prisma
+```
+
+### `/src/core/components`
+
+Global UI components that are used across multiple modules:
+
+```tsx
+// core/components/ui/button.tsx
+import * as React from 'react'
+import { cn } from '@/core/utils/classnames'
+
+interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  variant?: 'primary' | 'secondary' | 'outline'
+  size?: 'sm' | 'md' | 'lg'
+}
+
+export function Button({ 
+  children, 
+  className, 
+  variant = 'primary', 
+  size = 'md', 
+  ...props 
+}: ButtonProps) {
+  return (
+    <button
+      className={cn(
+        "font-medium rounded focus:outline-none focus:ring-2",
+        {
+          'bg-blue-600 hover:bg-blue-700 text-white': variant === 'primary',
+          'bg-gray-200 hover:bg-gray-300 text-gray-800': variant === 'secondary',
+          'border border-gray-300 hover:bg-gray-100': variant === 'outline',
+          'text-sm px-3 py-1': size === 'sm',
+          'px-4 py-2': size === 'md',
+          'text-lg px-6 py-3': size === 'lg',
+        },
+        className
+      )}
+      {...props}
+    >
+      {children}
+    </button>
+  )
+}
+```
+
+### `/src/modules/[feature]/components`
+
+Feature-specific UI components that encapsulate the presentation layer of that feature:
+
+```tsx
+// modules/courses/components/course-card.tsx
+import { formatDistance } from 'date-fns'
+import { Course } from '../types'
+import { formatDuration } from '../utils'
+
+interface CourseCardProps {
+  course: Course
+  onSelect?: (id: string) => void
+}
+
+export function CourseCard({ course, onSelect }: CourseCardProps) {
+  return (
+    <div 
+      className="border rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-shadow"
+      onClick={() => onSelect?.(course.id)}
+    >
+      {course.thumbnailUrl && (
+        <div className="aspect-video w-full overflow-hidden">
+          <img 
+            src={course.thumbnailUrl} 
+            alt={course.title}
+            className="w-full object-cover"
+          />
+        </div>
+      )}
+      
+      <div className="p-4">
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-medium bg-blue-100 text-blue-800 px-2 py-0.5 rounded">
+            {course.level}
+          </span>
+          <span className="text-sm text-gray-500">
+            {formatDuration(course.duration)}
+          </span>
+        </div>
+        
+        <h3 className="mt-2 text-lg font-semibold">{course.title}</h3>
+        <p className="mt-1 text-sm text-gray-600 line-clamp-2">{course.description}</p>
+        
+        <div className="mt-3 flex items-center text-sm text-gray-500">
+          <span>Created {formatDistance(new Date(course.createdAt), new Date(), { addSuffix: true })}</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+```
+
+### `/src/modules/[feature]/actions`
+
+Server actions that handle data mutations for the feature:
+
+```typescript
+// modules/quiz/actions/submit-answer.ts
+'use server'
+
+import { z } from 'zod'
+import { prisma } from '@/core/lib/db'
+import { auth } from '@/modules/auth'
+
+const AnswerSubmissionSchema = z.object({
+  questionId: z.string().uuid(),
+  answerId: z.string().uuid(),
+})
+
+export async function submitAnswer(formData: FormData) {
+  const user = await auth.getCurrentUser()
+  
+  if (!user) {
+    return { success: false, error: 'Not authenticated' }
+  }
+  
+  try {
+    const data = {
+      questionId: formData.get('questionId'),
+      answerId: formData.get('answerId'),
+    }
+    
+    const { questionId, answerId } = AnswerSubmissionSchema.parse(data)
+    
+    // Check if answer is correct
+    const question = await prisma.question.findUnique({
+      where: { id: questionId },
+      include: { answers: true }
+    })
+    
+    if (!question) {
+      return { success: false, error: 'Question not found' }
+    }
+    
+    const selectedAnswer = question.answers.find(a => a.id === answerId)
+    const isCorrect = selectedAnswer?.isCorrect ?? false
+    
+    // Record submission
+    await prisma.submission.create({
+      data: {
+        userId: user.id,
+        questionId,
+        answerId,
+        isCorrect
+      }
+    })
+    
+    return { 
+      success: true, 
+      isCorrect,
+      explanation: isCorrect ? question.explanation : null
+    }
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return { success: false, error: 'Invalid submission data' }
+    }
+    return { success: false, error: 'Failed to submit answer' }
+  }
+}
+```
+
+### `/src/modules/[feature]/hooks`
+
+Custom React hooks that encapsulate complex stateful logic for the feature:
+
+```typescript
+// modules/shop/hooks/use-cart.ts
+import { useState, useEffect } from 'react'
+import { Product } from '../types'
+
+interface CartItem extends Product {
+  quantity: number
+}
+
+export function useCart() {
+  const [items, setItems] = useState<CartItem[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  
+  // Load cart from localStorage on initial render
+  useEffect(() => {
+    try {
+      const savedCart = localStorage.getItem('cart')
+      if (savedCart) {
+        setItems(JSON.parse(savedCart))
+      }
+    } catch (error) {
+      console.error('Failed to load cart:', error)
+    }
+    setIsLoading(false)
+  }, [])
+  
+  // Save cart to localStorage whenever it changes
+  useEffect(() => {
+    if (!isLoading) {
+      localStorage.setItem('cart', JSON.stringify(items))
+    }
+  }, [items, isLoading])
+  
+  function addToCart(product: Product) {
+    setItems(prevItems => {
+      const existingItem = prevItems.find(item => item.id === product.id)
+      
+      if (existingItem) {
+        // Increase quantity if product already in cart
+        return prevItems.map(item => 
+          item.id === product.id
+            ? { ...item, quantity: item.quantity + 1 }
+            : item
+        )
+      } else {
+        // Add new product to cart
+        return [...prevItems, { ...product, quantity: 1 }]
+      }
+    })
+  }
+  
+  function removeFromCart(productId: string) {
+    setItems(prevItems => prevItems.filter(item => item.id !== productId))
+  }
+  
+  function updateQuantity(productId: string, quantity: number) {
+    if (quantity < 1) {
+      removeFromCart(productId)
+      return
+    }
+    
+    setItems(prevItems => 
+      prevItems.map(item => 
+        item.id === productId
+          ? { ...item, quantity }
+          : item
+      )
+    )
+  }
+  
+  const totalItems = items.reduce((sum, item) => sum + item.quantity, 0)
+  const subtotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0)
+  
+  return {
+    items,
+    totalItems,
+    subtotal,
+    isLoading,
+    addToCart,
+    removeFromCart,
+    updateQuantity,
+  }
+}
+```
+
+### `/src/app`
+
+Next.js App Router pages that compose modules together:
+
+```tsx
+// app/courses/[id]/page.tsx
+import { Suspense } from 'react'
+import { notFound } from 'next/navigation'
+import { prisma } from '@/core/lib/db'
+import { CourseDetails } from '@/modules/courses/components'
+import { QuizList } from '@/modules/quiz/components'
+import { EnrollButton } from '@/modules/courses/components'
+
+export async function generateMetadata({ params }) {
+  const course = await prisma.course.findUnique({
+    where: { id: params.id }
+  })
+  
+  if (!course) {
+    return {
+      title: 'Course Not Found'
+    }
+  }
+  
+  return {
+    title: course.title,
+    description: course.description
+  }
+}
+
+export default async function CoursePage({ params }) {
+  const course = await prisma.course.findUnique({
+    where: { id: params.id },
+    include: {
+      instructor: true,
+    }
+  })
+  
+  if (!course) {
+    notFound()
+  }
+  
+  return (
+    <div className="max-w-4xl mx-auto py-8 px-4">
+      <CourseDetails course={course} />
+      
+      <div className="mt-8 flex justify-end">
+        <EnrollButton courseId={course.id} />
+      </div>
+      
+      <div className="mt-12">
+        <h2 className="text-2xl font-bold mb-4">Course Quizzes</h2>
+        <Suspense fallback={<div>Loading quizzes...</div>}>
+          <QuizList courseId={course.id} />
+        </Suspense>
+      </div>
+    </div>
+  )
+}
+```
+
+## Module Public APIs: The Key to Clean Interfaces
+
+Each module exposes a carefully curated public API through its index.ts file:
+
+```typescript
+// modules/courses/index.ts
+// Export components
+export { CourseCard } from './components/course-card';
+export { CourseList } from './components/course-list';
+export { CourseDetails } from './components/course-details';
+export { CourseForm } from './components/course-form';
+export { EnrollButton } from './components/enroll-button';
+
+// Export actions
+export { createCourse, updateCourse, deleteCourse } from './actions';
+export { enrollInCourse } from './actions/enrollment';
+
+// Export hooks
+export { useCourses } from './hooks/use-courses';
+export { useEnrollment } from './hooks/use-enrollment';
+
+// Export types
+export type { Course, CourseLevel, EnrollmentStatus } from './types';
+```
+
+This creates a clear contract for what the module provides to other parts of the application while hiding implementation details, making refactoring much safer.
+
+## Benefits of Module-Based Architecture
+
+Since implementing this architecture, we've experienced:
+
+1. **Improved team collaboration**: Multiple developers can work on different modules simultaneously with minimal conflicts
+2. **Faster onboarding**: New team members quickly understand the codebase structure and boundaries
+3. **Enhanced code reusability**: Modules expose clean APIs that encourage proper interface design
+4. **Better maintainability**: Business logic changes are isolated to relevant modules
+5. **Simplified testing**: Modules can be tested in isolation with clear boundaries
+6. **Reduced technical debt**: Clean separation prevents "quick fixes" that violate architectural boundaries
+
+## Implementation Strategies
+
+When implementing this architecture, consider these strategies:
+
+### 1. TypeScript Path Aliases
+
+Configure TypeScript path aliases for clean imports:
+
+```json
+// tsconfig.json
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@/core/*": ["./src/core/*"],
+      "@/modules/*": ["./src/modules/*"]
+    }
+  }
+}
+```
+
+### 2. Gradual Migration
+
+For existing projects, migrate gradually:
+
+1. Create the new directory structure
+2. Move core components and utilities first
+3. Identify clear feature boundaries and create initial modules
+4. Migrate one feature at a time to the module structure
+5. Update imports as you go
+
+### 3. Module Boundaries
+
+Enforce strict module boundaries:
+
+- Modules should only import from their own directories or from `/core`
+- Modules should never import from other modules except through their public APIs
+- The `/app` directory should compose modules together but contain minimal logic
+
+## Conclusion
+
+The module-based architecture has transformed how we build Next.js applications. By organizing code around business domains rather than technical functions, we've created a more maintainable, scalable, and developer-friendly codebase.
+
+This approach works for teams of any size—from solo developers to large enterprises. As your application grows, the clear boundaries and separation of concerns will pay dividends in maintainability and development speed.
+
+If you're struggling with codebase organization in a growing Next.js application, I highly recommend giving this architecture a try.
+
+What architectural patterns have you found successful for large Next.js applications? Share your experiences in the comments below!
