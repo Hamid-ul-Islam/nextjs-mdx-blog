@@ -1,0 +1,2797 @@
+---
+title: "Enterprise-Grade Next.js: Best Practices from Google and Microsoft Engineers"
+date: "2025-03-09"
+author: "Senior Full Stack Developer"
+tags: ["nextjs", "typescript", "react", "best practices", "enterprise"]
+description: "A comprehensive guide to building production-ready Next.js applications following enterprise-level best practices from top tech companies."
+---
+
+# Enterprise-Grade Next.js: Best Practices from Google and Microsoft Engineers
+
+As Next.js continues to dominate the React framework landscape, companies like Google and Microsoft have established robust patterns for building scalable, maintainable applications. This guide walks through best practices following a logical progression - from project setup to deployment.
+
+## Table of Contents
+
+1. [Project Structure and Organization](#project-structure-and-organization)
+2. [TypeScript Configuration](#typescript-configuration)
+3. [Component Architecture](#component-architecture)
+4. [State Management](#state-management)
+5. [Server Actions](#server-actions)
+6. [API Design Patterns](#api-design-patterns)
+7. [Data Fetching Strategy](#data-fetching-strategy)
+8. [Authentication and Authorization](#authentication-and-authorization)
+9. [Form Handling](#form-handling)
+10. [Error Handling](#error-handling)
+11. [Performance Optimization](#performance-optimization)
+12. [Testing Strategy](#testing-strategy)
+13. [Deployment and CI/CD](#deployment-and-cicd)
+
+## Project Structure and Organization
+
+Enterprise applications need a clear, scalable folder structure. Here's a battle-tested organization approach:
+
+```
+src/
+├── app/ (Next.js App Router)
+│   ├── api/ (API Routes)
+│   └── (routes)/
+├── components/
+│   ├── ui/ (Reusable UI components)
+│   ├── features/ (Feature-specific components)
+│   └── layouts/ (Layout components)
+├── lib/
+│   ├── server-actions/ (Server actions)
+│   ├── utils/ (Utility functions)
+│   └── constants/ (Application constants)
+├── hooks/ (Custom hooks)
+├── services/ (API service layer)
+├── types/ (TypeScript type definitions)
+├── styles/ (Global styles)
+└── tests/ (Test utilities and mocks)
+```
+
+Let's explain the rationale:
+
+- **App Directory**: Next.js App Router pattern for page routes
+- **Components**: Follow atomic design principles (atoms, molecules, organisms)
+- **Lib**: Core utilities and server-side logic
+- **Services**: API abstractions, grouped by domain
+- **Types**: Shared TypeScript interfaces
+
+**Example: Creating a clear component boundary**
+
+```tsx
+// src/components/ui/Button.tsx - A reusable UI component
+import { cva, type VariantProps } from "class-variance-authority";
+import { ButtonHTMLAttributes, forwardRef } from "react";
+import { cn } from "@/lib/utils";
+
+const buttonVariants = cva(
+  "inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none",
+  {
+    variants: {
+      variant: {
+        default: "bg-primary text-primary-foreground hover:bg-primary/90",
+        destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+        outline: "border border-input hover:bg-accent hover:text-accent-foreground",
+        secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
+        ghost: "hover:bg-accent hover:text-accent-foreground",
+        link: "underline-offset-4 hover:underline text-primary",
+      },
+      size: {
+        default: "h-10 py-2 px-4",
+        sm: "h-9 px-3 rounded-md",
+        lg: "h-11 px-8 rounded-md",
+      },
+    },
+    defaultVariants: {
+      variant: "default",
+      size: "default",
+    },
+  }
+);
+
+interface ButtonProps
+  extends ButtonHTMLAttributes<HTMLButtonElement>,
+    VariantProps<typeof buttonVariants> {
+  isLoading?: boolean;
+}
+
+const Button = forwardRef<HTMLButtonElement, ButtonProps>(
+  ({ className, variant, size, isLoading, children, ...props }, ref) => {
+    return (
+      <button
+        className={cn(buttonVariants({ variant, size }), className)}
+        ref={ref}
+        disabled={isLoading || props.disabled}
+        {...props}
+      >
+        {isLoading ? (
+          <span className="mr-2">
+            <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+              <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+              ></circle>
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+              ></path>
+            </svg>
+          </span>
+        ) : null}
+        {children}
+      </button>
+    );
+  }
+);
+
+Button.displayName = "Button";
+
+export { Button, buttonVariants };
+
+## Authentication and Authorization
+
+Enterprise applications need robust authentication and authorization systems. Next.js works well with NextAuth.js (now Auth.js):
+
+**Example: Auth.js Setup**
+
+```tsx
+// src/app/api/auth/[...nextauth]/route.ts
+import NextAuth, { type NextAuthOptions } from "next-auth";
+import CredentialsProvider from "next-auth/providers/credentials";
+import { PrismaAdapter } from "@auth/prisma-adapter";
+import { db } from "@/lib/db";
+import { compare } from "bcryptjs";
+
+export const authOptions: NextAuthOptions = {
+  adapter: PrismaAdapter(db),
+  session: {
+    strategy: "jwt",
+  },
+  pages: {
+    signIn: "/auth/login",
+    error: "/auth/error",
+  },
+  providers: [
+    CredentialsProvider({
+      name: "Credentials",
+      credentials: {
+        email: { label: "Email", type: "email" },
+        password: { label: "Password", type: "password" },
+      },
+      async authorize(credentials) {
+        if (!credentials?.email || !credentials?.password) {
+          return null;
+        }
+
+        const user = await db.user.findUnique({
+          where: { email: credentials.email },
+        });
+
+        if (!user || !(await compare(credentials.password, user.passwordHash))) {
+          return null;
+        }
+
+        return {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+        };
+      },
+    }),
+  ],
+  callbacks: {
+    async jwt({ token, user }) {
+      if (user) {
+        token.id = user.id;
+        token.role = user.role;
+      }
+      return token;
+    },
+    async session({ session, token }) {
+      if (token && session.user) {
+        session.user.id = token.id as string;
+        session.user.role = token.role as string;
+      }
+      return session;
+    },
+  },
+};
+
+const handler = NextAuth(authOptions);
+
+export { handler as GET, handler as POST };
+```
+
+**Example: Auth Provider Component**
+
+```tsx
+// src/components/providers/AuthProvider.tsx
+"use client";
+
+import { SessionProvider } from "next-auth/react";
+import type { Session } from "next-auth";
+
+type AuthProviderProps = {
+  children: React.ReactNode;
+  session: Session | null;
+};
+
+export function AuthProvider({ children, session }: AuthProviderProps) {
+  return <SessionProvider session={session}>{children}</SessionProvider>;
+}
+```
+
+**Example: Role-Based Access Control Component**
+
+```tsx
+// src/components/auth/RoleGuard.tsx
+"use client";
+
+import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
+import type { UserRole } from "@/types/api";
+
+type RoleGuardProps = {
+  children: React.ReactNode;
+  allowedRoles: UserRole[];
+  fallbackUrl?: string;
+};
+
+export function RoleGuard({
+  children,
+  allowedRoles,
+  fallbackUrl = "/auth/unauthorized",
+}: RoleGuardProps) {
+  const { data: session, status } = useSession();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (status === "loading") return;
+
+    if (!session) {
+      router.push("/auth/login");
+      return;
+    }
+
+    const userRole = session.user.role as UserRole;
+    
+    if (!allowedRoles.includes(userRole)) {
+      router.push(fallbackUrl);
+    }
+  }, [session, status, router, allowedRoles, fallbackUrl]);
+
+  if (status === "loading") {
+    return <div>Loading...</div>;
+  }
+
+  if (!session) {
+    return null;
+  }
+
+  const userRole = session.user.role as UserRole;
+  
+  if (!allowedRoles.includes(userRole)) {
+    return null;
+  }
+
+  return <>{children}</>;
+}
+```
+
+## Form Handling
+
+Enterprise applications need robust form handling with validation, error management, and consistent UX:
+
+**Example: Complete Form Implementation**
+
+```tsx
+// src/components/features/auth/LoginForm.tsx
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { signIn } from "next-auth/react";
+import { z } from "zod";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
+import { Alert, AlertDescription } from "@/components/ui/Alert";
+
+// Validation schema
+const loginSchema = z.object({
+  email: z.string().email("Please enter a valid email address"),
+  password: z.string().min(8, "Password must be at least 8 characters"),
+});
+
+type LoginFormValues = z.infer<typeof loginSchema>;
+
+export function LoginForm() {
+  const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<LoginFormValues>({
+    resolver: zodResolver(loginSchema),
+    defaultValues: {
+      email: "",
+      password: "",
+    },
+  });
+
+  const onSubmit = async (data: LoginFormValues) => {
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      const result = await signIn("credentials", {
+        redirect: false,
+        email: data.email,
+        password: data.password,
+      });
+
+      if (result?.error) {
+        setError("Invalid email or password");
+        return;
+      }
+
+      router.push("/dashboard");
+      router.refresh(); // Refresh server components
+    } catch (error) {
+      setError("An unexpected error occurred");
+      console.error("Login error:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="w-full max-w-md space-y-6 p-6 bg-white rounded-lg shadow-md">
+      <div className="text-center">
+        <h1 className="text-2xl font-bold">Log in to your account</h1>
+        <p className="text-gray-600 mt-2">
+          Enter your credentials to access your account
+        </p>
+      </div>
+
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        <div className="space-y-2">
+          <label htmlFor="email" className="text-sm font-medium">
+            Email
+          </label>
+          <Input
+            id="email"
+            type="email"
+            placeholder="name@example.com"
+            {...register("email")}
+            aria-invalid={errors.email ? "true" : "false"}
+          />
+          {errors.email && (
+            <p className="text-sm text-red-500">{errors.email.message}</p>
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <label htmlFor="password" className="text-sm font-medium">
+              Password
+            </label>
+            <a href="/auth/forgot-password" className="text-sm text-blue-600 hover:underline">
+              Forgot password?
+            </a>
+          </div>
+          <Input
+            id="password"
+            type="password"
+            placeholder="••••••••"
+            {...register("password")}
+            aria-invalid={errors.password ? "true" : "false"}
+          />
+          {errors.password && (
+            <p className="text-sm text-red-500">{errors.password.message}</p>
+          )}
+        </div>
+
+        <Button
+          type="submit"
+          className="w-full"
+          isLoading={isLoading}
+          disabled={isLoading}
+        >
+          Log in
+        </Button>
+      </form>
+
+      <div className="text-center text-sm">
+        <span className="text-gray-600">Don't have an account?</span>{" "}
+        <a href="/auth/register" className="text-blue-600 hover:underline">
+          Sign up
+        </a>
+      </div>
+    </div>
+  );
+}
+```
+
+## Error Handling
+
+Enterprise applications need comprehensive error handling at all levels:
+
+**Example: Global Error Boundary**
+
+```tsx
+// src/components/global/ErrorBoundary.tsx
+"use client";
+
+import { useEffect } from "react";
+import { Button } from "@/components/ui/Button";
+
+type ErrorBoundaryProps = {
+  error: Error & { digest?: string };
+  reset: () => void;
+};
+
+export default function ErrorBoundary({ error, reset }: ErrorBoundaryProps) {
+  useEffect(() => {
+    // Log error to monitoring service
+    console.error("Unhandled error:", error);
+  }, [error]);
+
+  return (
+    <div className="flex flex-col items-center justify-center min-h-screen p-6 text-center">
+      <h2 className="text-2xl font-bold mb-4">Something went wrong</h2>
+      <p className="text-gray-600 mb-6 max-w-md">
+        We've encountered an unexpected error. Our team has been notified.
+      </p>
+      {error.message && process.env.NODE_ENV === "development" && (
+        <div className="bg-red-50 p-4 rounded-md mb-6 max-w-lg overflow-auto text-left">
+          <p className="font-medium text-red-800">Error details:</p>
+          <p className="text-red-700 mt-1">{error.message}</p>
+          {error.stack && (
+            <pre className="mt-2 text-xs text-red-700 overflow-auto">
+              {error.stack}
+            </pre>
+          )}
+        </div>
+      )}
+      <div className="flex space-x-4">
+        <Button onClick={reset} variant="default">
+          Try again
+        </Button>
+        <Button onClick={() => window.location.href = "/"} variant="outline">
+          Go to homepage
+        </Button>
+      </div>
+    </div>
+  );
+}
+```
+
+**Example: API Error Handling**
+
+```tsx
+// src/lib/api-error.ts
+export class ApiError extends Error {
+  public readonly statusCode: number;
+  public readonly code: string;
+  public readonly details?: unknown;
+
+  constructor(
+    message: string,
+    statusCode: number = 500,
+    code: string = "INTERNAL_SERVER_ERROR",
+    details?: unknown
+  ) {
+    super(message);
+    this.statusCode = statusCode;
+    this.code = code;
+    this.details = details;
+    this.name = "ApiError";
+  }
+
+  static badRequest(message: string, code = "BAD_REQUEST", details?: unknown) {
+    return new ApiError(message, 400, code, details);
+  }
+
+  static unauthorized(message = "Unauthorized", code = "UNAUTHORIZED") {
+    return new ApiError(message, 401, code);
+  }
+
+  static forbidden(message = "Forbidden", code = "FORBIDDEN") {
+    return new ApiError(message, 403, code);
+  }
+
+  static notFound(message = "Resource not found", code = "NOT_FOUND") {
+    return new ApiError(message, 404, code);
+  }
+
+  static conflict(message: string, code = "CONFLICT", details?: unknown) {
+    return new ApiError(message, 409, code, details);
+  }
+
+  static validationError(message: string, details?: unknown) {
+    return new ApiError(message, 400, "VALIDATION_ERROR", details);
+  }
+
+  static internal(message = "Internal server error", details?: unknown) {
+    return new ApiError(message, 500, "INTERNAL_SERVER_ERROR", details);
+  }
+}
+
+// Example usage in API handler
+// src/app/api/users/[id]/route.ts
+
+import { NextRequest, NextResponse } from "next/server";
+import { db } from "@/lib/db";
+import { ApiError } from "@/lib/api-error";
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const { id } = params;
+
+    const user = await db.user.findUnique({
+      where: { id },
+    });
+
+    if (!user) {
+      throw ApiError.notFound("User not found");
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: user,
+    });
+  } catch (error) {
+    console.error("[API_ERROR]", error);
+
+    if (error instanceof ApiError) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: error.code,
+            message: error.message,
+            details: error.details,
+          },
+        },
+        { status: error.statusCode }
+      );
+    }
+
+    return NextResponse.json(
+      {
+        success: false,
+        error: {
+          code: "INTERNAL_SERVER_ERROR",
+          message: "An unexpected error occurred",
+        },
+      },
+      { status: 500 }
+    );
+  }
+}
+```
+
+## Performance Optimization
+
+Enterprise applications must be optimized for performance:
+
+**Example: Image Optimization**
+
+```tsx
+// src/components/features/products/ProductCard.tsx
+import Image from "next/image";
+import { ProductBadge } from "./ProductBadge";
+import type { Product } from "@/types/api";
+
+type ProductCardProps = {
+  product: Product;
+  priority?: boolean;
+};
+
+export function ProductCard({ product, priority = false }: ProductCardProps) {
+  return (
+    <div className="group relative bg-white rounded-lg shadow-md overflow-hidden">
+      <div className="aspect-h-1 aspect-w-1 w-full overflow-hidden rounded-t-lg bg-gray-200">
+        <Image
+          src={product.imageUrl}
+          alt={product.name}
+          width={500}
+          height={500}
+          priority={priority}
+          className="h-full w-full object-cover object-center group-hover:opacity-90 transition-opacity"
+          sizes="(min-width: 1024px) 20vw, (min-width: 768px) 25vw, 50vw"
+        />
+      </div>
+      <div className="p-4">
+        <div className="flex justify-between items-start">
+          <h3 className="text-sm font-medium text-gray-900">{product.name}</h3>
+          {product.isNew && <ProductBadge label="New" variant="success" />}
+        </div>
+        <p className="mt-1 text-sm text-gray-500">{product.category}</p>
+        <p className="mt-2 text-lg font-semibold">${product.price.toFixed(2)}</p>
+      </div>
+    </div>
+  );
+}
+```
+
+**Example: Route Segment Config**
+
+```tsx
+// src/app/blog/[slug]/page.tsx
+import { notFound } from "next/navigation";
+import { Metadata } from "next";
+import { db } from "@/lib/db";
+import { BlogContent } from "@/components/features/blog/BlogContent";
+import { formatDate } from "@/lib/utils";
+
+// Configure the route segment
+export const dynamic = "force-static"; // Make this route static at build time
+export const revalidate = 3600; // Revalidate every hour
+
+// Generate static paths at build time
+export async function generateStaticParams() {
+  const posts = await db.post.findMany({
+    select: { slug: true },
+    where: { status: "PUBLISHED" },
+  });
+
+  return posts.map((post) => ({
+    slug: post.slug,
+  }));
+}
+
+// Generate metadata for the page
+export async function generateMetadata({
+  params,
+}: {
+  params: { slug: string };
+}): Promise<Metadata> {
+  const post = await db.post.findUnique({
+    where: { slug: params.slug },
+  });
+
+  if (!post) {
+    return {
+      title: "Post Not Found",
+    };
+  }
+
+  return {
+    title: post.title,
+    description: post.excerpt,
+    openGraph: {
+      title: post.title,
+      description: post.excerpt,
+      type: "article",
+      publishedTime: post.publishedAt.toISOString(),
+      authors: [post.author.name],
+    },
+  };
+}
+
+export default async function BlogPost({
+  params,
+}: {
+  params: { slug: string };
+}) {
+  const post = await db.post.findUnique({
+    where: { slug: params.slug },
+    include: { author: true, categories: true },
+  });
+
+  if (!post) {
+    notFound();
+  }
+
+  return (
+    <article className="container mx-auto py-10 max-w-4xl">
+      <header className="mb-8">
+        <h1 className="text-3xl font-bold mb-2">{post.title}</h1>
+        <div className="text-gray-600">
+          <span>By {post.author.name}</span>
+          <span className="mx-2">•</span>
+          <time dateTime={post.publishedAt.toISOString()}>
+            {formatDate(post.publishedAt)}
+          </time>
+        </div>
+      </header>
+
+      <BlogContent content={post.content} />
+    </article>
+  );
+}
+```
+
+## Testing Strategy
+
+Enterprise applications need comprehensive testing:
+
+**Example: Component Testing with React Testing Library**
+
+```tsx
+// src/components/ui/Button.test.tsx
+import { render, screen, fireEvent } from "@testing-library/react";
+import { Button } from "./Button";
+
+describe("Button", () => {
+  it("renders correctly with default props", () => {
+    render(<Button>Click me</Button>);
+    
+    const button = screen.getByRole("button", { name: /click me/i });
+    expect(button).toBeInTheDocument();
+    expect(button).toHaveClass("bg-primary");
+  });
+
+  it("renders loading state correctly", () => {
+    render(<Button isLoading>Click me</Button>);
+    
+    const button = screen.getByRole("button", { name: /click me/i });
+    expect(button).toBeDisabled();
+    
+    const spinner = screen.getByRole("img", { hidden: true });
+    expect(spinner).toBeInTheDocument();
+  });
+
+  it("calls onClick handler when clicked", () => {
+    const handleClick = jest.fn();
+    
+    render(<Button onClick={handleClick}>Click me</Button>);
+    
+    const button = screen.getByRole("button", { name: /click me/i });
+    fireEvent.click(button);
+    
+    expect(handleClick).toHaveBeenCalledTimes(1);
+  });
+
+  it("applies custom className", () => {
+    render(<Button className="custom-class">Click me</Button>);
+    
+    const button = screen.getByRole("button", { name: /click me/i });
+    expect(button).toHaveClass("custom-class");
+  });
+
+  it("renders different variants correctly", () => {
+    const { rerender } = render(<Button variant="destructive">Destructive</Button>);
+    
+    let button = screen.getByRole("button", { name: /destructive/i });
+    expect(button).toHaveClass("bg-destructive");
+    
+    rerender(<Button variant="outline">Outline</Button>);
+    button = screen.getByRole("button", { name: /outline/i });
+    expect(button).toHaveClass("border-input");
+  });
+});
+```
+
+**Example: API Route Testing**
+
+```tsx
+// src/app/api/users/route.test.ts
+import { NextRequest } from "next/server";
+import { GET, POST } from "./route";
+import { db } from "@/lib/db";
+
+// Mock the database
+jest.mock("@/lib/db", () => ({
+  user: {
+    count: jest.fn(),
+    findMany: jest.fn(),
+    findUnique: jest.fn(),
+    create: jest.fn(),
+  },
+}));
+
+describe("Users API", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe("GET /api/users", () => {
+    it("returns paginated users", async () => {
+      // Mock database responses
+      (db.user.count as jest.Mock).mockResolvedValue(100);
+      (db.user.findMany as jest.Mock).mockResolvedValue([
+        { id: "1", name: "John", email: "john@example.com" },
+        { id: "2", name: "Jane", email: "jane@example.com" },
+      ]);
+
+      // Create request
+      const request = new NextRequest("http://localhost:3000/api/users?page=1&pageSize=10");
+      
+      // Call the API handler
+      const response = await GET(request);
+      const responseData = await response.json();
+
+      // Assertions
+      expect(response.status).toBe(200);
+      expect(responseData).toEqual({
+        success: true,
+        data: [
+          { id: "1", name: "John", email: "john@example.com" },
+          { id: "2", name: "Jane", email: "jane@example.com" },
+        ],
+        meta: {
+          page: 1,
+          pageSize: 10,
+          total: 100,
+        },
+      });
+      
+      // Verify database calls
+      expect(db.user.count).toHaveBeenCalledTimes(1);
+      expect(db.user.findMany).toHaveBeenCalledWith({
+        skip: 0,
+        take: 10,
+        orderBy: { createdAt: "asc" },
+        select: expect.any(Object),
+      });
+    });
+  });
+
+  describe("POST /api/users", () => {
+    it("creates a new user successfully", async () => {
+      // Mock database responses
+      (db.user.findUnique as jest.Mock).mockResolvedValue(null);
+      (db.user.create as jest.Mock).mockResolvedValue({
+        id: "new-id",
+        name: "New User",
+        email: "new@example.com",
+        role: "USER",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      // Create request with body
+      const request = new NextRequest("http://localhost:3000/api/users", {
+        method: "POST",
+        body: JSON.stringify({
+          name: "New User",
+          email: "new@example.com",
+          password: "password123",
+        }),
+      });
+
+      // Call the API handler
+      const response = await POST(request);
+      const responseData = await response.json();
+
+      // Assertions
+      expect(response.status).toBe(201);
+      expect(responseData.success).toBe(true);
+      expect(responseData.data).toHaveProperty("id", "new-id");
+      
+      // Verify database calls
+      expect(db.user.findUnique).toHaveBeenCalledWith({
+        where: { email: "new@example.com" },
+      });
+      expect(db.user.create).toHaveBeenCalledWith({
+        data: {
+          name: "New User",
+          email: "new@example.com",
+          password: "password123",
+          role: "USER",
+        },
+        select: expect.any(Object),
+      });
+    });
+
+    it("returns 409 when email already exists", async () => {
+      // Mock database responses - user already exists
+      (db.user.findUnique as jest.Mock).mockResolvedValue({
+        id: "existing-id",
+        email: "existing@example.com",
+      });
+
+      // Create request with body
+      const request = new NextRequest("http://localhost:3000/api/users", {
+        method: "POST",
+        body: JSON.stringify({
+          name: "New User",
+          email: "existing@example.com",
+          password: "password123",
+        }),
+      });
+
+      // Call the API handler
+      const response = await POST(request);
+      const responseData = await response.json();
+
+      // Assertions
+      expect(response.status).toBe(409);
+      expect(responseData.success).toBe(false);
+      expect(responseData.error).toEqual({
+        code: "DUPLICATE_EMAIL",
+        message: "A user with this email already exists",
+      });
+      
+      // Verify database calls
+      expect(db.user.create).not.toHaveBeenCalled();
+    });
+  });
+});
+```
+
+## Deployment and CI/CD
+
+Enterprise-grade applications need robust deployment pipelines:
+
+**Example: GitHub Actions Workflow**
+
+```yaml
+# .github/workflows/ci.yml
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+          cache: "npm"
+          
+      - name: Install dependencies
+        run: npm run build
+        
+      - name: Zip artifact for deployment
+        run: zip -r release.zip .next node_modules public package.json package-lock.json
+        
+      - name: Upload artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: release-artifact
+          path: release.zip
+
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    needs: build
+    environment: production
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: release-artifact
+          
+      - name: Unzip artifact
+        run: unzip release.zip
+        
+      - name: Deploy to production
+        uses: vercel/actions@v3
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          vercel-args: "--prod"
+```
+
+**Example: Dockerfile for Next.js**
+
+```dockerfile
+# Use Node.js LTS
+FROM node:18-alpine AS base
+
+# Install dependencies only when needed
+FROM base AS deps
+WORKDIR /app
+
+# Copy package files
+COPY package.json package-lock.json ./
+
+# Install dependencies
+RUN npm ci
+
+# Rebuild the source code only when needed
+FROM base AS builder
+WORKDIR /app
+
+# Copy node_modules from deps stage
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+
+# Build the application
+ENV NEXT_TELEMETRY_DISABLED 1
+RUN npm run build
+
+# Production image, copy all the files and run next
+FROM base AS runner
+WORKDIR /app
+
+ENV NODE_ENV production
+ENV NEXT_TELEMETRY_DISABLED 1
+
+# Create a non-root user
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 nextjs
+
+# Copy necessary files from the build stage
+COPY --from=builder /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+# Set correct permissions
+USER nextjs
+
+# Expose port
+EXPOSE 3000
+
+# Set environment variables
+ENV PORT 3000
+ENV HOSTNAME "0.0.0.0"
+
+# Start the application
+CMD ["node", "server.js"]
+```
+
+## Conclusion
+
+Building enterprise-grade Next.js applications requires attention to detail across multiple areas:
+
+1. **Robust Project Structure**: Organize code logically to scale with your team
+2. **Type Safety**: Use TypeScript for better developer experience and code quality
+3. **Component Architecture**: Follow atomic design principles for reusable components
+4. **State Management**: Use appropriate solutions for different state types
+5. **Server Actions**: Implement with proper validation and error handling
+6. **API Design**: Create consistent, well-documented APIs
+7. **Data Fetching**: Use React Query and service abstractions
+8. **Authentication**: Implement secure auth with role-based access
+9. **Form Handling**: Use React Hook Form with Zod validation
+10. **Error Handling**: Implement comprehensive error handling
+11. **Performance**: Optimize with proper data fetching, caching and image handling
+12. **Testing**: Write unit, integration, and e2e tests
+13. **CI/CD**: Set up automated pipelines for quality and deployments
+
+By applying these enterprise patterns, you'll create robust Next.js applications that scale with both your business and development team.
+
+Would you like to see more specific examples or explore any of these topics in more detail? Let me know in the comments!
+
+## Wrapping Up: The Enterprise Next.js Advantage
+
+As we've explored throughout this guide, Next.js offers a powerful foundation for building enterprise-grade applications. But it's the thoughtful application of best practices and patterns that truly transforms it into a formidable enterprise platform.
+
+The advantages of following these enterprise patterns are substantial:
+
+- **Developer Experience**: Well-structured code with clear conventions makes onboarding new team members faster and reduces cognitive load for existing developers.
+
+- **Maintainability**: Consistent patterns across the codebase ensure that maintenance costs decrease over time rather than balloon as the application grows.
+
+- **Scalability**: These architectural patterns are battle-tested at companies like Google and Microsoft, designed to scale with both your application complexity and team size.
+
+- **Performance**: Strategic use of caching, optimized data fetching, and proper component composition leads to snappy user experiences even as applications grow.
+
+- **Security**: Built-in validation, proper authentication flows, and consistent error handling help protect your application and users.
+
+### Getting Started
+
+If you're beginning a new Next.js project or looking to improve an existing one, don't try to implement all these patterns at once. Start with the foundation:
+
+1. Establish a clear project structure
+2. Implement TypeScript with strong typing
+3. Create a consistent component hierarchy
+4. Set up proper error handling
+
+From there, gradually incorporate more advanced patterns as your application needs grow.
+
+### The Evolution Continues
+
+Next.js and the React ecosystem continue to evolve rapidly. While the core patterns in this guide will remain relevant, the specific implementations may change as new features and best practices emerge.
+
+Stay curious, keep learning, and remember that these patterns are guidelines, not rigid rules. The best enterprise applications adapt these patterns to their specific business needs rather than forcing their business to adapt to technical patterns.
+
+Happy coding, and may your Next.js applications be both robust and a joy to work on!
+
+---
+
+### About the Author
+
+This comprehensive guide was written by a Senior Full Stack Developer with extensive experience building enterprise applications at scale. Have questions or want to discuss these patterns further? Leave a comment below or connect with me on Twitter or LinkedIn.
+
+---
+
+*Last updated: March 9, 2025* npm ci
+        
+      - name: Run ESLint
+        run: npm run lint
+        
+      - name: Run TypeScript check
+        run: npm run typecheck
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+          cache: "npm"
+          
+      - name: Install dependencies
+        run: npm ci
+        
+      - name: Run tests
+        run: npm run test
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+          cache: "npm"
+          
+      - name: Install dependencies
+        run: npm ci
+        
+      - name: Build application
+        run:```
+
+## TypeScript Configuration
+
+Strong typing is non-negotiable in enterprise applications. Here's how to set up robust TypeScript configurations:
+
+```tsx
+// tsconfig.json
+{
+  "compilerOptions": {
+    "target": "es5",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "incremental": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "exclude": ["node_modules"]
+}
+```
+
+**Example: Create robust shared interfaces**
+
+```tsx
+// src/types/api.ts
+export interface ApiResponse<T = any> {
+  success: boolean;
+  data?: T;
+  error?: ApiError;
+  meta?: {
+    page?: number;
+    pageSize?: number;
+    total?: number;
+    nextCursor?: string;
+  };
+}
+
+export interface ApiError {
+  code: string;
+  message: string;
+  details?: unknown;
+}
+
+// User domain types
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type UserRole = "ADMIN" | "USER" | "EDITOR";
+
+export interface UserCreateInput {
+  name: string;
+  email: string;
+  password: string;
+  role?: UserRole;
+}
+
+export interface UserUpdateInput {
+  name?: string;
+  email?: string;
+  role?: UserRole;
+}
+```
+
+## Component Architecture
+
+Enterprise applications should follow a hierarchical component model:
+
+1. **Page Components**: Top-level, tied to routes
+2. **Layout Components**: Define page structure
+3. **Feature Components**: Domain-specific, complex components
+4. **UI Components**: Reusable, presentational components
+
+**Example: Component Composition Pattern**
+
+```tsx
+// src/components/features/users/UserForm.tsx
+import { useState } from "react";
+import { z } from "zod";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Button } from "@/components/ui/Button";
+import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
+import type { User, UserCreateInput, UserUpdateInput } from "@/types/api";
+
+// Validation schema
+const userFormSchema = z.object({
+  name: z.string().min(2, "Name must be at least 2 characters"),
+  email: z.string().email("Invalid email address"),
+  role: z.enum(["ADMIN", "USER", "EDITOR"], {
+    required_error: "Please select a role",
+  }),
+});
+
+type UserFormProps = {
+  initialData?: User;
+  onSubmit: (data: UserCreateInput | UserUpdateInput) => Promise<void>;
+  isSubmitting?: boolean;
+};
+
+export function UserForm({ initialData, onSubmit, isSubmitting = false }: UserFormProps) {
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<z.infer<typeof userFormSchema>>({
+    resolver: zodResolver(userFormSchema),
+    defaultValues: initialData
+      ? {
+          name: initialData.name,
+          email: initialData.email,
+          role: initialData.role,
+        }
+      : undefined,
+  });
+
+  const onFormSubmit = async (data: z.infer<typeof userFormSchema>) => {
+    await onSubmit(data);
+  };
+
+  return (
+    <form onSubmit={handleSubmit(onFormSubmit)} className="space-y-6">
+      <div className="space-y-2">
+        <label htmlFor="name" className="text-sm font-medium">
+          Name
+        </label>
+        <Input
+          id="name"
+          {...register("name")}
+          error={errors.name?.message}
+        />
+        {errors.name && (
+          <p className="text-sm text-red-500">{errors.name.message}</p>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        <label htmlFor="email" className="text-sm font-medium">
+          Email
+        </label>
+        <Input
+          id="email"
+          type="email"
+          {...register("email")}
+          error={errors.email?.message}
+        />
+        {errors.email && (
+          <p className="text-sm text-red-500">{errors.email.message}</p>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        <label htmlFor="role" className="text-sm font-medium">
+          Role
+        </label>
+        <Select id="role" {...register("role")}>
+          <option value="">Select a role</option>
+          <option value="ADMIN">Admin</option>
+          <option value="USER">User</option>
+          <option value="EDITOR">Editor</option>
+        </Select>
+        {errors.role && (
+          <p className="text-sm text-red-500">{errors.role.message}</p>
+        )}
+      </div>
+
+      <Button type="submit" isLoading={isSubmitting}>
+        {initialData ? "Update User" : "Create User"}
+      </Button>
+    </form>
+  );
+}
+
+// Usage in a page component
+// src/app/users/create/page.tsx
+import { UserForm } from "@/components/features/users/UserForm";
+import { createUser } from "@/lib/server-actions/user-actions";
+import type { UserCreateInput } from "@/types/api";
+
+export default function CreateUserPage() {
+  const handleSubmit = async (data: UserCreateInput) => {
+    const result = await createUser(data);
+    // Handle result...
+  };
+
+  return (
+    <div className="container mx-auto py-10">
+      <h1 className="text-2xl font-bold mb-6">Create New User</h1>
+      <UserForm onSubmit={handleSubmit} />
+    </div>
+  );
+}
+```
+
+## State Management
+
+Enterprise applications need predictable state management:
+
+1. **Local Component State**: Use `useState` for component-specific state
+2. **Form State**: Use React Hook Form for complex forms
+3. **Server State**: Use React Query/SWR for data fetching
+4. **Global State**: Use React Context strategically for cross-cutting concerns
+
+**Example: Custom React Context for Global State**
+
+```tsx
+// src/lib/context/theme-context.tsx
+import { createContext, useContext, useEffect, useState } from "react";
+
+type Theme = "light" | "dark" | "system";
+
+type ThemeProviderProps = {
+  children: React.ReactNode;
+  defaultTheme?: Theme;
+  storageKey?: string;
+};
+
+type ThemeProviderState = {
+  theme: Theme;
+  setTheme: (theme: Theme) => void;
+};
+
+const initialState: ThemeProviderState = {
+  theme: "system",
+  setTheme: () => null,
+};
+
+const ThemeProviderContext = createContext<ThemeProviderState>(initialState);
+
+export function ThemeProvider({
+  children,
+  defaultTheme = "system",
+  storageKey = "theme-preference",
+  ...props
+}: ThemeProviderProps) {
+  const [theme, setTheme] = useState<Theme>(
+    () => (localStorage.getItem(storageKey) as Theme) || defaultTheme
+  );
+
+  useEffect(() => {
+    const root = window.document.documentElement;
+    
+    root.classList.remove("light", "dark");
+    
+    if (theme === "system") {
+      const systemTheme = window.matchMedia("(prefers-color-scheme: dark)")
+        .matches
+        ? "dark"
+        : "light";
+      
+      root.classList.add(systemTheme);
+      return;
+    }
+    
+    root.classList.add(theme);
+  }, [theme]);
+
+  const value = {
+    theme,
+    setTheme: (theme: Theme) => {
+      localStorage.setItem(storageKey, theme);
+      setTheme(theme);
+    },
+  };
+
+  return (
+    <ThemeProviderContext.Provider {...props} value={value}>
+      {children}
+    </ThemeProviderContext.Provider>
+  );
+}
+
+export const useTheme = () => {
+  const context = useContext(ThemeProviderContext);
+  
+  if (context === undefined)
+    throw new Error("useTheme must be used within a ThemeProvider");
+    
+  return context;
+};
+```
+
+**Example: React Query for Server State**
+
+```tsx
+// src/lib/hooks/users.ts
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { userService } from "@/services/user-service";
+import type { User, UserCreateInput, UserUpdateInput } from "@/types/api";
+
+// Fetch users hook
+export function useUsers(page = 1, pageSize = 10) {
+  return useQuery({
+    queryKey: ["users", page, pageSize],
+    queryFn: () => userService.getUsers(page, pageSize),
+    keepPreviousData: true,
+  });
+}
+
+// Fetch a single user
+export function useUser(id: string) {
+  return useQuery({
+    queryKey: ["users", id],
+    queryFn: () => userService.getUserById(id),
+    enabled: !!id,
+  });
+}
+
+// Create user mutation
+export function useCreateUser() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (data: UserCreateInput) => userService.createUser(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+    },
+  });
+}
+
+// Update user mutation
+export function useUpdateUser(id: string) {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (data: UserUpdateInput) => userService.updateUser(id, data),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["users", id] });
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+    },
+  });
+}
+
+// Delete user mutation
+export function useDeleteUser() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: (id: string) => userService.deleteUser(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["users"] });
+    },
+  });
+}
+```
+
+## Server Actions
+
+Server Actions in Next.js App Router provide a powerful way to handle server-side operations. Here's how enterprise teams implement them:
+
+### Using React Cache with Server Actions
+
+The `cache` function from React is a powerful tool for optimizing server components and server actions. It allows you to memoize expensive operations, reducing redundant database calls and improving performance.
+
+**Example: Implementing Cached Data Fetching with Server Actions**
+
+```tsx
+// src/lib/server-actions/product-actions.ts
+"use server";
+
+import { cache } from "react";
+import { revalidatePath, revalidateTag } from "next/cache";
+import { z } from "zod";
+import { db } from "@/lib/db";
+import { logger } from "@/lib/logger";
+
+// Cache product fetching for 60 seconds
+export const getProduct = cache(async (id: string) => {
+  logger.info({
+    action: "getProduct",
+    id,
+    message: "Fetching product",
+    cacheInfo: "Will be cached for concurrent requests",
+  });
+
+  return db.product.findUnique({
+    where: { id },
+    include: {
+      categories: true,
+      reviews: {
+        take: 5,
+        orderBy: { createdAt: "desc" },
+      },
+    },
+  });
+});
+
+// Cache category list
+export const getCategories = cache(async () => {
+  logger.info({
+    action: "getCategories",
+    message: "Fetching all categories",
+    cacheInfo: "Will be cached for concurrent requests",
+  });
+
+  return db.category.findMany({
+    orderBy: { name: "asc" },
+  });
+});
+
+// Cache featured products with tags for granular revalidation
+export const getFeaturedProducts = cache(async () => {
+  logger.info({
+    action: "getFeaturedProducts",
+    message: "Fetching featured products",
+    cacheInfo: "Tagged with 'featured-products'",
+  });
+
+  return db.product.findMany({
+    where: { isFeatured: true },
+    orderBy: { createdAt: "desc" },
+    take: 6,
+  });
+});
+
+// Uncached mutation with cache invalidation
+export async function updateProductFeaturedStatus(id: string, isFeatured: boolean) {
+  try {
+    await db.product.update({
+      where: { id },
+      data: { isFeatured },
+    });
+
+    // Revalidate specific tags and paths
+    revalidateTag("featured-products");
+    revalidatePath(`/products/${id}`);
+    revalidatePath("/");
+
+    return { success: true };
+  } catch (error) {
+    logger.error({
+      action: "updateProductFeaturedStatus",
+      error,
+      id,
+      message: "Failed to update product featured status",
+    });
+
+    return {
+      success: false,
+      error: {
+        code: "UPDATE_FAILED",
+        message: "Failed to update product",
+      },
+    };
+  }
+}
+```
+
+**Example: Using Cached Server Actions in Components**
+
+```tsx
+// src/app/products/[id]/page.tsx
+import { notFound } from "next/navigation";
+import { Suspense } from "react";
+import { getProduct, getCategories } from "@/lib/server-actions/product-actions";
+import { ProductDetails } from "@/components/features/products/ProductDetails";
+import { ProductSkeleton } from "@/components/features/products/ProductSkeleton";
+import { RelatedProducts } from "@/components/features/products/RelatedProducts";
+
+export default async function ProductPage({
+  params,
+}: {
+  params: { id: string };
+}) {
+  // These calls will be cached for concurrent requests
+  const productPromise = getProduct(params.id);
+  const categoriesPromise = getCategories();
+
+  // Wait for both promises to resolve
+  const [product, categories] = await Promise.all([
+    productPromise,
+    categoriesPromise,
+  ]);
+
+  if (!product) {
+    notFound();
+  }
+
+  return (
+    <div className="container mx-auto py-10">
+      <ProductDetails product={product} categories={categories} />
+      
+      <div className="mt-16">
+        <h2 className="text-2xl font-bold mb-6">Related Products</h2>
+        <Suspense fallback={<div>Loading related products...</div>}>
+          <RelatedProducts 
+            categoryIds={product.categories.map(c => c.id)} 
+            currentProductId={product.id} 
+          />
+        </Suspense>
+      </div>
+    </div>
+  );
+}
+```
+
+**Example: Cache Granularity and Revalidation**
+
+```tsx
+// src/lib/server-actions/dashboard-actions.ts
+"use server";
+
+import { cache } from "react";
+import { revalidateTag } from "next/cache";
+import { db } from "@/lib/db";
+
+// Different cache durations for different types of data
+export const getRealtimeStats = cache(async () => {
+  // This isn't cached long since it's real-time
+  return db.stats.findFirst({
+    orderBy: { timestamp: "desc" },
+  });
+});
+
+// Cache with tags for targeted revalidation
+export const getDailySales = cache(async () => {
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+  return db.sales.findMany({
+    where: {
+      timestamp: {
+        gte: thirtyDaysAgo,
+      },
+    },
+    orderBy: {
+      timestamp: "asc",
+    },
+  });
+});
+
+// Functions to revalidate specific caches
+export async function refreshSalesData() {
+  revalidateTag("sales-data");
+  return { success: true };
+}
+
+export async function refreshAllDashboardData() {
+  revalidateTag("stats");
+  revalidateTag("sales-data");
+  revalidateTag("inventory");
+  return { success: true };
+}
+
+// Use function composition with cache for complex operations
+export const getInventoryStatus = cache(async () => {
+  const lowStockThreshold = 10;
+  
+  const products = await db.product.findMany({
+    select: {
+      id: true,
+      name: true,
+      sku: true,
+      stockQuantity: true,
+    },
+  });
+  
+  // Process the data
+  const lowStockItems = products.filter(p => p.stockQuantity < lowStockThreshold);
+  const totalItems = products.length;
+  const lowStockPercentage = (lowStockItems.length / totalItems) * 100;
+  
+  return {
+    lowStockItems,
+    totalItems,
+    lowStockPercentage,
+    timestamp: new Date(),
+  };
+});
+```
+
+**Example: Cache Considerations and Best Practices**
+
+```tsx
+// src/lib/server-actions/cache-utils.ts
+"use server";
+
+import { cache } from "react";
+import { db } from "@/lib/db";
+import { logger } from "@/lib/logger";
+
+// Good: Deterministic, stable arguments
+export const getUserById = cache(async (userId: string) => {
+  return db.user.findUnique({ where: { id: userId } });
+});
+
+// Bad: Non-deterministic arguments will defeat caching
+// Don't do this:
+export const getCurrentTime = cache(async () => {
+  // Will still be called on every request since Date.now() changes
+  return { timestamp: Date.now() };
+});
+
+// Good: Cacheable with stable arguments + manual timestamp
+export const getLatestData = cache(async (category: string) => {
+  const data = await db.data.findMany({
+    where: { category },
+    orderBy: { createdAt: "desc" },
+    take: 10,
+  });
+  
+  // Add timestamp after the query
+  return {
+    data,
+    fetchedAt: new Date().toISOString(), // For informational purposes
+  };
+});
+
+// Good: Composition of cached functions
+export const getDashboardData = cache(async (userId: string) => {
+  // These cached functions are called only once even if getDashboardData is called multiple times
+  const user = await getUserById(userId);
+  const posts = await getPostsByUser(userId);
+  const stats = await getUserStats(userId);
+  
+  return { user, posts, stats };
+});
+
+// Good: Cache with proper error handling
+export const getPostsByUser = cache(async (userId: string) => {
+  try {
+    return await db.post.findMany({
+      where: { authorId: userId },
+      orderBy: { createdAt: "desc" },
+    });
+  } catch (error) {
+    // Log the error but return empty array to ensure consistent return type
+    logger.error({
+      action: "getPostsByUser",
+      userId,
+      error,
+      message: "Failed to fetch posts",
+    });
+    
+    return [];
+  }
+});
+
+// Cache with proper type return
+export const getUserStats = cache(async (userId: string) => {
+  const postsCount = await db.post.count({
+    where: { authorId: userId },
+  });
+  
+  const commentsCount = await db.comment.count({
+    where: { authorId: userId },
+  });
+  
+  const likesCount = await db.like.count({
+    where: { userId },
+  });
+  
+  return { postsCount, commentsCount, likesCount };
+});
+```
+
+```tsx
+// src/lib/server-actions/user-actions.ts
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { z } from "zod";
+import { db } from "@/lib/db";
+import { logger } from "@/lib/logger";
+import type { UserCreateInput, UserUpdateInput } from "@/types/api";
+
+// Validation schemas
+const CreateUserSchema = z.object({
+  name: z.string().min(2).max(100),
+  email: z.string().email(),
+  password: z.string().min(8),
+  role: z.enum(["ADMIN", "USER", "EDITOR"]).default("USER"),
+});
+
+const UpdateUserSchema = z.object({
+  name: z.string().min(2).max(100).optional(),
+  email: z.string().email().optional(),
+  role: z.enum(["ADMIN", "USER", "EDITOR"]).optional(),
+});
+
+// Create user server action
+export async function createUser(input: UserCreateInput) {
+  const traceId = crypto.randomUUID();
+  
+  try {
+    // Check permissions
+    const session = await getServerSession(authOptions);
+    
+    if (!session || session.user.role !== "ADMIN") {
+      return {
+        success: false,
+        error: {
+          code: "UNAUTHORIZED",
+          message: "Not authorized to create users",
+        },
+      };
+    }
+    
+    // Validate input
+    const validatedData = CreateUserSchema.parse(input);
+    
+    // Check if user with email already exists
+    const existingUser = await db.user.findUnique({
+      where: { email: validatedData.email },
+    });
+    
+    if (existingUser) {
+      return {
+        success: false,
+        error: {
+          code: "DUPLICATE_EMAIL",
+          message: "A user with this email already exists",
+        },
+      };
+    }
+    
+    // Create user
+    const user = await db.user.create({
+      data: validatedData,
+    });
+    
+    // Log success
+    logger.info({
+      action: "createUser",
+      traceId,
+      userId: user.id,
+      message: "User created successfully",
+    });
+    
+    // Revalidate users path
+    revalidatePath("/users");
+    
+    return {
+      success: true,
+      data: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
+    };
+  } catch (error) {
+    // Log error
+    logger.error({
+      action: "createUser",
+      traceId,
+      error,
+      message: "Failed to create user",
+    });
+    
+    // Return structured error response
+    if (error instanceof z.ZodError) {
+      return {
+        success: false,
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "Invalid input data",
+          details: error.errors,
+        },
+      };
+    }
+    
+    return {
+      success: false,
+      error: {
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Failed to create user",
+      },
+    };
+  }
+}
+
+// Export singleton instance
+export const userService = new UserService();
+
+// Example: Data Fetching in Server Component
+// src/app/users/page.tsx
+import { Suspense } from "react";
+import { userService } from "@/services/user-service";
+import { UsersList } from "@/components/features/users/UsersList";
+import { Skeleton } from "@/components/ui/Skeleton";
+
+// Metadata for the page
+export const metadata = {
+  title: "Users | Dashboard",
+  description: "Manage users in the system",
+};
+
+// Server-side data fetching
+async function getUsers(page = 1, pageSize = 10) {
+  try {
+    const response = await userService.getUsers(page, pageSize);
+    return response;
+  } catch (error) {
+    console.error("Failed to fetch users:", error);
+    return { success: false, data: [], meta: { total: 0 } };
+  }
+}
+
+export default async function UsersPage({
+  searchParams,
+}: {
+  searchParams: { page?: string; pageSize?: string };
+}) {
+  const page = Number(searchParams.page || "1");
+  const pageSize = Number(searchParams.pageSize || "10");
+  
+  return (
+    <div className="container mx-auto py-10">
+      <h1 className="text-2xl font-bold mb-6">Users Management</h1>
+      
+      <Suspense fallback={<Skeleton className="h-96" />}>
+        <UsersListWrapper page={page} pageSize={pageSize} />
+      </Suspense>
+    </div>
+  );
+}
+
+// Wrapper component to handle async data
+async function UsersListWrapper({
+  page,
+  pageSize,
+}: {
+  page: number;
+  pageSize: number;
+}) {
+  const { data, meta } = await getUsers(page, pageSize);
+  
+  return (
+    <UsersList 
+      users={data || []} 
+      currentPage={page} 
+      totalPages={Math.ceil((meta?.total || 0) / pageSize)}
+    />
+  );
+}
+
+// Update user server action
+export async function updateUser(id: string, input: UserUpdateInput) {
+  const traceId = crypto.randomUUID();
+  
+  try {
+    // Check permissions
+    const session = await getServerSession(authOptions);
+    
+    if (!session || (session.user.role !== "ADMIN" && session.user.id !== id)) {
+      return {
+        success: false,
+        error: {
+          code: "UNAUTHORIZED",
+          message: "Not authorized to update this user",
+        },
+      };
+    }
+    
+    // Validate input
+    const validatedData = UpdateUserSchema.parse(input);
+    
+    // Check if user exists
+    const existingUser = await db.user.findUnique({
+      where: { id },
+    });
+    
+    if (!existingUser) {
+      return {
+        success: false,
+        error: {
+          code: "NOT_FOUND",
+          message: "User not found",
+        },
+      };
+    }
+    
+    // Update user
+    const updatedUser = await db.user.update({
+      where: { id },
+      data: validatedData,
+    });
+    
+    // Log success
+    logger.info({
+      action: "updateUser",
+      traceId,
+      userId: id,
+      message: "User updated successfully",
+    });
+    
+    // Revalidate paths
+    revalidatePath(`/users/${id}`);
+    revalidatePath("/users");
+    
+    return {
+      success: true,
+      data: {
+        id: updatedUser.id,
+        name: updatedUser.name,
+        email: updatedUser.email,
+        role: updatedUser.role,
+      },
+    };
+  } catch (error) {
+    // Log error
+    logger.error({
+      action: "updateUser",
+      traceId,
+      userId: id,
+      error,
+      message: "Failed to update user",
+    });
+    
+    // Return structured error response
+    if (error instanceof z.ZodError) {
+      return {
+        success: false,
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "Invalid input data",
+          details: error.errors,
+        },
+      };
+    }
+    
+    return {
+      success: false,
+      error: {
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Failed to update user",
+      },
+    };
+  }
+}
+```
+
+## API Design Patterns
+
+Enterprise applications need consistent, robust API patterns:
+
+### Next.js Request and Response Objects
+
+Next.js provides several request and response objects across its different routing paradigms. Understanding these is crucial for enterprise applications:
+
+1. **App Router Request Objects**:
+   - Native `Request` object (Web standard)
+   - `NextRequest` extended object (Next.js specific)
+
+2. **App Router Response Objects**:
+   - Native `Response` object (Web standard)
+   - `NextResponse` extended object (Next.js specific)
+
+3. **Pages Router Objects**:
+   - `req` and `res` from Node.js HTTP module
+   - Extended with Next.js specific helpers
+
+**Example: Using NextRequest and NextResponse in App Router**
+
+```tsx
+// src/app/api/users/route.ts
+import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
+import { db } from "@/lib/db";
+import type { ApiResponse } from "@/types/api";
+
+// Query params schema
+const QuerySchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().positive().max(100).default(10),
+  sort: z.enum(["name", "email", "createdAt"]).optional(),
+  order: z.enum(["asc", "desc"]).default("asc"),
+  search: z.string().optional(),
+});
+
+export async function GET(request: NextRequest) {
+  try {
+    // Access and parse query parameters
+    const { searchParams } = new URL(request.url);
+    const queryParams = {
+      page: searchParams.get("page") || "1",
+      pageSize: searchParams.get("pageSize") || "10",
+      sort: searchParams.get("sort") || undefined,
+      order: searchParams.get("order") || "asc",
+      search: searchParams.get("search") || undefined,
+    };
+    
+    // Access headers
+    const authHeader = request.headers.get("authorization");
+    
+    // Access cookies
+    const sessionCookie = request.cookies.get("session-id");
+    
+    // Validate and transform query params
+    const { page, pageSize, sort, order, search } = QuerySchema.parse(queryParams);
+    
+    // Build where clause
+    const where = search
+      ? {
+          OR: [
+            { name: { contains: search, mode: "insensitive" } },
+            { email: { contains: search, mode: "insensitive" } },
+          ],
+        }
+      : {};
+    
+    // Get total count for pagination
+    const total = await db.user.count({ where });
+    
+    // Build orderBy
+    const orderBy = sort
+      ? { [sort]: order }
+      : { createdAt: order as "asc" | "desc" };
+    
+    // Get paginated users
+    const users = await db.user.findMany({
+      where,
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      orderBy,
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+    
+    // Create response with NextResponse
+    const response: ApiResponse = {
+      success: true,
+      data: users,
+      meta: {
+        page,
+        pageSize,
+        total,
+      },
+    };
+    
+    // Creating response with custom headers and cookies
+    return NextResponse.json(response, {
+      status: 200,
+      headers: {
+        'X-Pagination-Total': total.toString(),
+        'Cache-Control': 'max-age=60, stale-while-revalidate',
+      }
+    });
+  } catch (error) {
+    console.error("[API_ERROR]", error);
+    
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: "INVALID_PARAMETERS",
+            message: "Invalid query parameters",
+            details: error.errors,
+          },
+        },
+        { status: 400 }
+      );
+    }
+    
+    return NextResponse.json(
+      {
+        success: false,
+        error: {
+          code: "INTERNAL_SERVER_ERROR",
+          message: "An unexpected error occurred",
+        },
+      },
+      { status: 500 }
+    );
+  }
+}
+
+// POST handler for creating users
+export async function POST(request: NextRequest) {
+  try {
+    // Parse JSON body
+    const body = await request.json();
+    
+    // Access geo data (IP-based)
+    const geo = request.geo;
+    const country = geo?.country || 'unknown';
+    
+    // Validate request body with Zod
+    const UserSchema = z.object({
+      name: z.string().min(2).max(100),
+      email: z.string().email(),
+      password: z.string().min(8),
+      role: z.enum(["ADMIN", "USER", "EDITOR"]).default("USER"),
+    });
+    
+    // Validate request body
+    const validatedData = UserSchema.parse(body);
+    
+    // Check if user with email already exists
+    const existingUser = await db.user.findUnique({
+      where: { email: validatedData.email },
+    });
+    
+    if (existingUser) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: "DUPLICATE_EMAIL",
+            message: "A user with this email already exists",
+          },
+        },
+        { status: 409 }
+      );
+    }
+    
+    // Create user
+    const user = await db.user.create({
+      data: {
+        ...validatedData,
+        meta: {
+          registration: {
+            country,
+            userAgent: request.headers.get("user-agent") || "unknown",
+          }
+        }
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+    
+    // Create a response with cookies and headers
+    const response = NextResponse.json(
+      {
+        success: true,
+        data: user,
+      },
+      { status: 201 }
+    );
+    
+    // Set cookies on response
+    response.cookies.set({
+      name: "user-id",
+      value: user.id,
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 60 * 60 * 24 * 7, // 1 week
+    });
+    
+    return response;
+  } catch (error) {
+    console.error("[API_ERROR]", error);
+    
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: "VALIDATION_ERROR",
+            message: "Invalid input data",
+            details: error.errors,
+          },
+        },
+        { status: 400 }
+      );
+    }
+    
+    return NextResponse.json(
+      {
+        success: false,
+        error: {
+          code: "INTERNAL_SERVER_ERROR",
+          message: "An unexpected error occurred",
+        },
+      },
+      { status: 500 }
+    );
+  }
+}
+```
+
+**Example: Working with Headers and Cookies**
+
+```tsx
+// src/app/api/auth/token/route.ts
+import { NextRequest, NextResponse } from "next/server";
+import { SignJWT } from "jose";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+
+export async function GET(request: NextRequest) {
+  try {
+    // Get current user session
+    const session = await getServerSession(authOptions);
+    
+    if (!session?.user) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: "UNAUTHORIZED",
+            message: "Authentication required",
+          },
+        },
+        { status: 401 }
+      );
+    }
+    
+    // Create JWT token
+    const secret = new TextEncoder().encode(process.env.JWT_SECRET);
+    const token = await new SignJWT({ sub: session.user.id, role: session.user.role })
+      .setProtectedHeader({ alg: "HS256" })
+      .setIssuedAt()
+      .setExpirationTime("1h")
+      .sign(secret);
+    
+    // Create response with token
+    const response = NextResponse.json({
+      success: true,
+      data: { token },
+    });
+    
+    // Set token in HTTP-only cookie
+    response.cookies.set({
+      name: "api-token",
+      value: token,
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge: 60 * 60, // 1 hour
+      path: "/api",
+    });
+    
+    // Set custom headers
+    response.headers.set("X-API-Version", "1.0.0");
+    response.headers.set("X-Rate-Limit", "100");
+    
+    return response;
+  } catch (error) {
+    console.error("[API_ERROR]", error);
+    
+    return NextResponse.json(
+      {
+        success: false,
+        error: {
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Failed to generate token",
+        },
+      },
+      { status: 500 }
+    );
+  }
+}
+```
+
+```tsx
+// src/middleware.ts
+import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import { getToken } from "next-auth/jwt";
+
+export async function middleware(request: NextRequest) {
+  // Get token
+  const token = await getToken({ req: request });
+  
+  // Check if path starts with /api/admin
+  if (request.nextUrl.pathname.startsWith("/api/admin")) {
+    if (!token || token.role !== "ADMIN") {
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: { 
+            code: "UNAUTHORIZED", 
+            message: "Admin access required" 
+          } 
+        },
+        { status: 403 }
+      );
+    }
+  }
+  
+  // For authenticated APIs
+  if (request.nextUrl.pathname.startsWith("/api/auth")) {
+    if (!token) {
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: { 
+            code: "UNAUTHENTICATED", 
+            message: "Authentication required" 
+          } 
+        },
+        { status: 401 }
+      );
+    }
+  }
+  
+  return NextResponse.next();
+}
+
+export const config = {
+  matcher: ["/api/admin/:path*", "/api/auth/:path*"],
+};
+```
+
+**Example: API Route Handler Implementation**
+
+```tsx
+// src/app/api/users/route.ts
+import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
+import { db } from "@/lib/db";
+import { ApiResponse } from "@/types/api";
+
+// Query params schema
+const QuerySchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  pageSize: z.coerce.number().int().positive().max(100).default(10),
+  sort: z.enum(["name", "email", "createdAt"]).optional(),
+  order: z.enum(["asc", "desc"]).default("asc"),
+  search: z.string().optional(),
+});
+
+export async function GET(request: NextRequest) {
+  try {
+    // Parse query params
+    const { searchParams } = new URL(request.url);
+    const queryParams = {
+      page: searchParams.get("page") || "1",
+      pageSize: searchParams.get("pageSize") || "10",
+      sort: searchParams.get("sort") || undefined,
+      order: searchParams.get("order") || "asc",
+      search: searchParams.get("search") || undefined,
+    };
+    
+    // Validate and transform query params
+    const { page, pageSize, sort, order, search } = QuerySchema.parse(queryParams);
+    
+    // Build where clause
+    const where = search
+      ? {
+          OR: [
+            { name: { contains: search, mode: "insensitive" } },
+            { email: { contains: search, mode: "insensitive" } },
+          ],
+        }
+      : {};
+    
+    // Get total count for pagination
+    const total = await db.user.count({ where });
+    
+    // Build orderBy
+    const orderBy = sort
+      ? { [sort]: order }
+      : { createdAt: order as "asc" | "desc" };
+    
+    // Get paginated users
+    const users = await db.user.findMany({
+      where,
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      orderBy,
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+    
+    const response: ApiResponse = {
+      success: true,
+      data: users,
+      meta: {
+        page,
+        pageSize,
+        total,
+      },
+    };
+    
+    return NextResponse.json(response);
+  } catch (error) {
+    console.error("[API_ERROR]", error);
+    
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: "INVALID_PARAMETERS",
+            message: "Invalid query parameters",
+            details: error.errors,
+          },
+        },
+        { status: 400 }
+      );
+    }
+    
+    return NextResponse.json(
+      {
+        success: false,
+        error: {
+          code: "INTERNAL_SERVER_ERROR",
+          message: "An unexpected error occurred",
+        },
+      },
+      { status: 500 }
+    );
+  }
+}
+
+// POST handler for creating users
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    
+    const UserSchema = z.object({
+      name: z.string().min(2).max(100),
+      email: z.string().email(),
+      password: z.string().min(8),
+      role: z.enum(["ADMIN", "USER", "EDITOR"]).default("USER"),
+    });
+    
+    // Validate request body
+    const validatedData = UserSchema.parse(body);
+    
+    // Check if user with email already exists
+    const existingUser = await db.user.findUnique({
+      where: { email: validatedData.email },
+    });
+    
+    if (existingUser) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: "DUPLICATE_EMAIL",
+            message: "A user with this email already exists",
+          },
+        },
+        { status: 409 }
+      );
+    }
+    
+    // Create user
+    const user = await db.user.create({
+      data: validatedData,
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
+    
+    return NextResponse.json(
+      {
+        success: true,
+        data: user,
+      },
+      { status: 201 }
+    );
+  } catch (error) {
+    console.error("[API_ERROR]", error);
+    
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: {
+            code: "VALIDATION_ERROR",
+            message: "Invalid input data",
+            details: error.errors,
+          },
+        },
+        { status: 400 }
+      );
+    }
+    
+    return NextResponse.json(
+      {
+        success: false,
+        error: {
+          code: "INTERNAL_SERVER_ERROR",
+          message: "An unexpected error occurred",
+        },
+      },
+      { status: 500 }
+    );
+  }
+}
+```
+
+## Data Fetching Strategy
+
+A robust data fetching approach combines server components, React Query, and service layers:
+
+**Example: Service Layer Abstraction**
+
+```tsx
+// src/services/user-service.ts
+import type { User, UserCreateInput, UserUpdateInput, ApiResponse } from "@/types/api";
+
+// Define base API URL
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "";
+
+// User service with typed methods
+export class UserService {
+  // Get paginated users
+  async getUsers(page = 1, pageSize = 10): Promise<ApiResponse<User[]>> {
+    const response = await fetch(
+      `${API_URL}/api/users?page=${page}&pageSize=${pageSize}`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        next: { tags: ["users"] },
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    return response.json();
+  }
+
+  // Get user by ID
+  async getUserById(id: string): Promise<ApiResponse<User>> {
+    const response = await fetch(`${API_URL}/api/users/${id}`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      next: { tags: [`user-${id}`] },
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    return response.json();
+  }
+
+  // Create new user
+  async createUser(data: UserCreateInput): Promise<ApiResponse<User>> {
+    const response = await fetch(`${API_URL}/api/users`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(data),
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    return response.json();
+  }
+
+  // Update existing user
+  async updateUser(id: string, data: UserUpdateInput): Promise<ApiResponse<User>> {
+    const response = await fetch(`${API_URL}/api/users/${id}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(data),
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    return response.json();
+  }
+
+  // Delete user
+  async deleteUser(id: string): Promise<ApiResponse<{ success: boolean }>> {
+    const response = await fetch(`${API_URL}/api/users/${id}`, {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    return response.json();
+  }
+}
